@@ -66,9 +66,10 @@ const CSS = `
   .bottom-nav{display:none}
   @media(max-width:767px){
     .sidebar{display:none}
-    .main{padding:1rem;padding-bottom:calc(var(--bottom-nav-h) + 1.25rem)}
+    .main{padding:1rem;padding-bottom:calc(var(--bottom-nav-h) + env(safe-area-inset-bottom) + 1.25rem)}
     .bottom-nav{
-      display:flex;position:fixed;bottom:0;left:0;right:0;height:var(--bottom-nav-h);
+      display:flex;position:fixed;bottom:0;left:0;right:0;
+      height:calc(var(--bottom-nav-h) + env(safe-area-inset-bottom));
       background:var(--surface);border-top:1px solid var(--border);z-index:50;
       padding:0 2px;padding-bottom:env(safe-area-inset-bottom);
       overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;
