@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://rhrcxtsfltmtvtaiwbmg.supabase.co";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJocmN4dHNmbHRtdHZ0YWl3Ym1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NTgxMjYsImV4cCI6MjA5MDQzNDEyNn0.YpuUerWEmcn9xT_sx8yhHgCjd39WElAGwMwdvR6XV_4";
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const fmt = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n || 0);
 const now = new Date();
@@ -12,11 +14,14 @@ const CUR_MONTH = now.getMonth() + 1;
 const CUR_YEAR = now.getFullYear();
 
 async function sb(table, method = "GET", body = null, query = "") {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token || SUPABASE_ANON_KEY;
+
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
     method,
     headers: {
       apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       Prefer: method === "POST" ? "return=representation" : "",
     },
@@ -194,7 +199,7 @@ const CSS = `
   }
 `;
 
-export default function App() {
+function MainApp() {
   const [tab, setTab] = useState("dashboard");
   const [filterMonth, setFilterMonth] = useState(CUR_MONTH);
   const [filterYear, setFilterYear] = useState(CUR_YEAR);
@@ -267,6 +272,9 @@ export default function App() {
           ))}
           <div style={{ marginTop: "auto" }}>
             {error && <div style={{ fontSize: "0.72rem", color: "var(--danger)", padding: "0.5rem 1.25rem", lineHeight: 1.4 }}>{error}</div>}
+            <div style={{ fontSize: "0.72rem", color: "var(--danger)", padding: "0.25rem 1.25rem 0.5rem", cursor: "pointer", fontWeight: 500 }} onClick={() => supabase.auth.signOut()}>
+              Log Out
+            </div>
             <div style={{ fontSize: "0.72rem", color: "var(--muted)", padding: "0.25rem 1.25rem 0.5rem" }}>
               {now.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
             </div>
@@ -281,19 +289,20 @@ export default function App() {
           )}
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem", alignItems: "center" }}>
             <div className="hide-desktop" style={{ fontWeight: 600, fontSize: "1.1rem", alignItems: "center", cursor: "pointer" }} onClick={() => setTab("dashboard")}>
-               <span className="logo-dot" style={{ display: "inline-block", marginRight: 6 }}/>Brim
+              <span className="logo-dot" style={{ display: "inline-block", marginRight: 6 }} />Brim
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", flex: 1, gap: "0.6rem", alignItems: "center" }}>
+              <button className="btn btn-sm hide-desktop" style={{ color: "var(--danger)", background: "transparent", border: "none", padding: 0 }} onClick={() => supabase.auth.signOut()}>Out</button>
               {tab !== "analytics" && (
                 <>
                   <span className="hide-mobile" style={{ fontSize: "0.8rem", color: "var(--muted)", fontWeight: 500 }}>Month:</span>
-                  <input 
-                    type="month" 
-                    className="form-input" 
+                  <input
+                    type="month"
+                    className="form-input"
                     style={{ width: "auto", padding: "0.3rem 0.6rem", fontSize: "0.85rem", height: "32px", borderRadius: "6px" }}
                     value={`${filterYear}-${String(filterMonth).padStart(2, '0')}`}
                     onChange={(e) => {
-                      if(e.target.value) {
+                      if (e.target.value) {
                         const [y, m] = e.target.value.split('-');
                         setFilterYear(Number(y));
                         setFilterMonth(Number(m));
@@ -887,7 +896,7 @@ function AIAdvisor({ data, totalIncome, committed, spendable, monthExpenses }) {
           setMessages(history.map(h => ({ role: h.role, content: h.content })));
           setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 300);
         }
-        
+
         const recentAdvice = await sb("ai_insights", "GET", null, "?order=created_at.desc&limit=1");
         if (recentAdvice && recentAdvice.length > 0) {
           setInsight(recentAdvice[0].content);
@@ -935,10 +944,10 @@ Budget: ${data.budgets.map(b => `${b.name} ₹${b.spent_amount || 0}/₹${b.limi
       });
       const d = await res.json();
       if (d.error) throw new Error(d.error.message);
-      
+
       const adviceText = d.candidates?.[0]?.content?.parts?.[0]?.text || "Could not generate insights.";
       setInsight(adviceText);
-      
+
       // Save advice to DB
       sb("ai_insights", "POST", { content: adviceText }).catch(console.error);
     } catch (err) { setInsight(`Failed to load insights: ${err.message}`); }
@@ -972,15 +981,15 @@ Budget: ${data.budgets.map(b => `${b.name} ₹${b.spent_amount || 0}/₹${b.limi
           systemInstruction: {
             parts: [{ text: `You are a friendly Indian personal finance advisor. Use ₹. Be specific and concise.\n\nContext:\n${buildContext()}${summaryContext}` }]
           },
-          contents: [{ role: "user", parts: [{ text: userMsg }]} ]
+          contents: [{ role: "user", parts: [{ text: userMsg }] }]
         })
       });
       const d = await res.json();
       if (d.error) throw new Error(d.error.message);
-      
+
       const aiText = d.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, couldn't respond.";
       setMessages(m => [...m, { role: "ai", content: aiText }]);
-      
+
       // Save AI system response to Supabase
       sb("ai_chats", "POST", { role: "ai", content: aiText }).catch(e => console.error(e));
 
@@ -1036,10 +1045,86 @@ Budget: ${data.budgets.map(b => `${b.name} ₹${b.spent_amount || 0}/₹${b.limi
   );
 }
 
+function AuthPage() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [isLogin, setIsLogin] = useState(true);
+
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (isLogin) {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        alert("Please check your email for a verification link.");
+      }
+    } catch (err) { alert(err.message); }
+    setLoading(false);
+  };
+
+  return (
+    <>
+      <style>{CSS}</style>
+      <div className="app" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", padding: "1rem" }}>
+        <form onSubmit={handleAuth} style={{ background: "var(--surface)", padding: "2.5rem 2rem", borderRadius: "16px", width: "100%", maxWidth: "380px", border: "1px solid var(--border)", boxShadow: "0 12px 40px rgba(0,0,0,0.06)" }}>
+          <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+            <span className="logo-dot" style={{ width: 14, height: 14, marginBottom: 16 }} />
+            <h2 style={{ fontSize: "1.6rem", fontWeight: 700, letterSpacing: "-0.5px" }}>{isLogin ? "Welcome Back" : "Create Account"}</h2>
+            <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: "0.5rem" }}>Connect securely to Brim India</p>
+          </div>
+          <div className="form-group" style={{ marginBottom: "1rem" }}>
+            <label className="form-label">Email</label>
+            <input type="email" required className="form-input" value={email} onChange={e => setEmail(e.target.value)} />
+          </div>
+          <div className="form-group" style={{ marginBottom: "1.5rem" }}>
+            <label className="form-label">Password</label>
+            <input type="password" required className="form-input" value={password} onChange={e => setPassword(e.target.value)} />
+          </div>
+          <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: "100%", justifyContent: "center", padding: "0.875rem", fontSize: "0.95rem" }}>
+            {loading ? "Authenticating..." : (isLogin ? "Secure Login" : "Join Brim")}
+          </button>
+          <div style={{ textAlign: "center", marginTop: "1.5rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+            <span style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => setIsLogin(!isLogin)}>
+              {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
+            </span>
+          </div>
+        </form>
+      </div>
+    </>
+  );
+}
+
+export default function App() {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) return null;
+  if (!session) return <AuthPage />;
+  return <MainApp />;
+}
+
 function Analytics() {
-  const [dateRange, setDateRange] = useState({ 
+  const [dateRange, setDateRange] = useState({
     start: new Date(new Date().setMonth(new Date().getMonth() - 2)).toISOString().slice(0, 10),
-    end: new Date().toISOString().slice(0, 10) 
+    end: new Date().toISOString().slice(0, 10)
   });
   const [viewMode, setViewMode] = useState("expenses");
   const [expenseSource, setExpenseSource] = useState("all");
@@ -1057,7 +1142,7 @@ function Analytics() {
         let monthly = {};
         let cats = {};
         let availableCatsSet = new Set();
-        
+
         if (viewMode === "expenses") {
           const tx = await sb("transactions", "GET", null, `?date=gte.${dateRange.start}&date=lte.${dateRange.end}&order=date.asc`);
           const emis = await sb("emis", "GET", null, `?status=eq.active`);
@@ -1074,7 +1159,7 @@ function Analytics() {
               }
             });
           }
-          
+
           if (expenseSource === "all" || expenseSource === "emis") {
             availableCatsSet.add("EMIs");
             if (categoryFilter === "All" || categoryFilter === "EMIs") {
@@ -1083,8 +1168,8 @@ function Analytics() {
                 let curr = new Date(dateRange.start);
                 curr.setDate(1);
                 const endD = new Date(dateRange.end);
-                
-                while(curr <= endD) {
+
+                while (curr <= endD) {
                   const m = curr.toISOString().slice(0, 7);
                   if (e.start_date.slice(0, 7) <= m) {
                     if (!monthly[m]) monthly[m] = { name: m, amount: 0 };
@@ -1099,21 +1184,21 @@ function Analytics() {
           }
         } else {
           // Income View
-          const startM = Number(dateRange.start.slice(5,7));
-          const startY = Number(dateRange.start.slice(0,4));
-          const endM = Number(dateRange.end.slice(5,7));
-          const endY = Number(dateRange.end.slice(0,4));
-          
+          const startM = Number(dateRange.start.slice(5, 7));
+          const startY = Number(dateRange.start.slice(0, 4));
+          const endM = Number(dateRange.end.slice(5, 7));
+          const endY = Number(dateRange.end.slice(0, 4));
+
           const incomes = await sb("income", "GET", null, `?year=gte.${startY}&year=lte.${endY}`);
-          
+
           incomes.forEach(i => {
             const isAfterStart = i.year > startY || (i.year === startY && i.month >= startM);
             const isBeforeEnd = i.year < endY || (i.year === endY && i.month <= endM);
-            
+
             if (isAfterStart && isBeforeEnd) {
               const type = i.type || "Other";
               availableCatsSet.add(type);
-              
+
               if (categoryFilter === "All" || categoryFilter === type) {
                 const m = `${i.year}-${String(i.month).padStart(2, '0')}`;
                 if (!monthly[m]) monthly[m] = { name: m, amount: 0 };
@@ -1124,9 +1209,9 @@ function Analytics() {
           });
         }
 
-        const sortedChart = Object.values(monthly).sort((a,b) => a.name.localeCompare(b.name));
-        const pieArr = Object.keys(cats).map(k => ({ name: k, value: cats[k] })).sort((a,b) => b.value - a.value);
-        
+        const sortedChart = Object.values(monthly).sort((a, b) => a.name.localeCompare(b.name));
+        const pieArr = Object.keys(cats).map(k => ({ name: k, value: cats[k] })).sort((a, b) => b.value - a.value);
+
         setAvailableCategories(Array.from(availableCatsSet).sort());
         setChartData(sortedChart);
         setPieData(pieArr);
@@ -1150,106 +1235,106 @@ function Analytics() {
       <div className="section-header">
         <div className="page-title" style={{ marginBottom: 0 }}>Analytics</div>
       </div>
-      
+
       <div className="card" style={{ marginBottom: "1rem" }}>
         <div className="form-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
           <div className="form-group">
             <label className="form-label">Report View</label>
             <select className="form-input" value={viewMode} onChange={handleModeChange}>
-               <option value="expenses">Expenses</option>
-               <option value="income">Income</option>
+              <option value="expenses">Expenses</option>
+              <option value="income">Income</option>
             </select>
           </div>
           <div className="form-group">
             <label className="form-label">Category Filter</label>
             <select className="form-input" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
-               <option value="All">All Categories</option>
-               {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value="All">All Categories</option>
+              {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
         <div className="form-row" style={{ marginTop: "0.5rem", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
           <div className="form-group">
             <label className="form-label">Start Date</label>
-            <input type="date" className="form-input" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
+            <input type="date" className="form-input" value={dateRange.start} onChange={e => setDateRange({ ...dateRange, start: e.target.value })} />
           </div>
           <div className="form-group">
             <label className="form-label">End Date</label>
-            <input type="date" className="form-input" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
+            <input type="date" className="form-input" value={dateRange.end} onChange={e => setDateRange({ ...dateRange, end: e.target.value })} />
           </div>
         </div>
         {viewMode === "expenses" && categoryFilter === "All" && (
           <div className="form-group" style={{ marginTop: "0.5rem" }}>
-              <label className="form-label">Filter Spends</label>
-              <select className="form-input" value={expenseSource} onChange={e => { setExpenseSource(e.target.value); setCategoryFilter("All"); }}>
-                 <option value="all">All (Tx + EMIs)</option>
-                 <option value="transactions">Transactions</option>
-                 <option value="emis">EMIs Only</option>
-              </select>
+            <label className="form-label">Filter Spends</label>
+            <select className="form-input" value={expenseSource} onChange={e => { setExpenseSource(e.target.value); setCategoryFilter("All"); }}>
+              <option value="all">All (Tx + EMIs)</option>
+              <option value="transactions">Transactions</option>
+              <option value="emis">EMIs Only</option>
+            </select>
           </div>
         )}
       </div>
 
       {loading ? (
         <div className="empty" style={{ margin: "3rem 0" }}>
-           <span className="spinner" style={{ width: 20, height: 20 }}></span>
-           <div style={{ marginTop: 10 }}>Crunching data...</div>
+          <span className="spinner" style={{ width: 20, height: 20 }}></span>
+          <div style={{ marginTop: 10 }}>Crunching data...</div>
         </div>
       ) : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
-             <div className="card">
-                <div className="metric-label" style={{ marginBottom: "1rem" }}>Monthly Trend</div>
-                <div style={{ height: 200, marginLeft: "-0.5rem" }}>
-                  {chartData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} margin={{ top: 10, right: 10, left: 5, bottom: 0 }}>
-                        <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => {
-                          const parts = v.split('-');
-                          return parts.length === 2 ? `${parts[1]}/${parts[0].slice(2)}` : v;
-                        }} />
-                        <YAxis fontSize={11} tickLine={false} axisLine={false} width={40} tickFormatter={(v) => v >= 1000 ? `₹${(v/1000).toLocaleString("en-IN", {maximumFractionDigits: 1})}k` : `₹${v}`} />
-                        <Tooltip formatter={(v) => `₹${Number(v).toLocaleString("en-IN")}`} cursor={{fill: 'var(--bg)'}} contentStyle={{ borderRadius: 8, border: '1px solid var(--border)', fontSize: '0.85rem' }} />
-                        <Bar dataKey="amount" fill={viewMode === "income" ? "var(--success)" : "var(--danger)"} radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : <div className="empty" style={{ marginTop: "4rem" }}>No data</div>}
-                </div>
-             </div>
-             
-             <div className="card">
-                <div className="metric-label" style={{ marginBottom: "1rem" }}>Breakdown</div>
-                <div style={{ height: 200 }}>
-                  {pieData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} paddingAngle={2}>
-                          {pieData.map((e, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(v) => `₹${v}`} contentStyle={{ borderRadius: 8, border: '1px solid var(--border)', fontSize: '0.85rem' }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : <div className="empty" style={{ marginTop: "4rem" }}>No data</div>}
-                </div>
-             </div>
+            <div className="card">
+              <div className="metric-label" style={{ marginBottom: "1rem" }}>Monthly Trend</div>
+              <div style={{ height: 200, marginLeft: "-0.5rem" }}>
+                {chartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: 10, right: 10, left: 5, bottom: 0 }}>
+                      <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => {
+                        const parts = v.split('-');
+                        return parts.length === 2 ? `${parts[1]}/${parts[0].slice(2)}` : v;
+                      }} />
+                      <YAxis fontSize={11} tickLine={false} axisLine={false} width={40} tickFormatter={(v) => v >= 1000 ? `₹${(v / 1000).toLocaleString("en-IN", { maximumFractionDigits: 1 })}k` : `₹${v}`} />
+                      <Tooltip formatter={(v) => `₹${Number(v).toLocaleString("en-IN")}`} cursor={{ fill: 'var(--bg)' }} contentStyle={{ borderRadius: 8, border: '1px solid var(--border)', fontSize: '0.85rem' }} />
+                      <Bar dataKey="amount" fill={viewMode === "income" ? "var(--success)" : "var(--danger)"} radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : <div className="empty" style={{ marginTop: "4rem" }}>No data</div>}
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="metric-label" style={{ marginBottom: "1rem" }}>Breakdown</div>
+              <div style={{ height: 200 }}>
+                {pieData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} paddingAngle={2}>
+                        {pieData.map((e, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v) => `₹${v}`} contentStyle={{ borderRadius: 8, border: '1px solid var(--border)', fontSize: '0.85rem' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : <div className="empty" style={{ marginTop: "4rem" }}>No data</div>}
+              </div>
+            </div>
           </div>
-          
+
           <div className="card">
-             <div className="section-header"><div className="section-title">Summary ({chartData.reduce((s, c) => s + c.amount, 0).toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 })})</div></div>
-             {pieData.map((p, i) => (
-               <div key={i} className="list-item">
-                 <div style={{display: "flex", alignItems: "center", gap: 8}}>
-                    <div style={{width: 12, height: 12, borderRadius: 2, background: COLORS[i % COLORS.length]}}></div>
-                    <div className="item-name">{p.name}</div>
-                 </div>
-                 <div className="item-amount" style={{ fontFamily: "var(--mono)", color: viewMode === "income" ? "var(--success)" : "var(--text)" }}>
-                   {viewMode === "income" ? "+" : ""}₹{p.value.toLocaleString("en-IN")}
-                 </div>
-               </div>
-             ))}
-             {pieData.length === 0 && <div className="empty">No records found for this set.</div>}
+            <div className="section-header"><div className="section-title">Summary ({chartData.reduce((s, c) => s + c.amount, 0).toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 })})</div></div>
+            {pieData.map((p, i) => (
+              <div key={i} className="list-item">
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: 2, background: COLORS[i % COLORS.length] }}></div>
+                  <div className="item-name">{p.name}</div>
+                </div>
+                <div className="item-amount" style={{ fontFamily: "var(--mono)", color: viewMode === "income" ? "var(--success)" : "var(--text)" }}>
+                  {viewMode === "income" ? "+" : ""}₹{p.value.toLocaleString("en-IN")}
+                </div>
+              </div>
+            ))}
+            {pieData.length === 0 && <div className="empty">No records found for this set.</div>}
           </div>
         </>
       )}

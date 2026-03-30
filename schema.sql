@@ -1,11 +1,12 @@
 -- ============================================
--- BRIM INDIA - Complete Database Schema
+-- BRIM INDIA - Complete Database Schema (Multi-User)
 -- Run this in Supabase: SQL Editor → New Query
 -- ============================================
 
 -- 1. Income sources
 CREATE TABLE IF NOT EXISTS income (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL DEFAULT auth.uid(),
   name text NOT NULL,
   amount numeric NOT NULL,
   type text NOT NULL DEFAULT 'salary',
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS income (
 -- 2. Budget categories
 CREATE TABLE IF NOT EXISTS budget_categories (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL DEFAULT auth.uid(),
   name text NOT NULL,
   limit_amount numeric NOT NULL,
   spent_amount numeric DEFAULT 0,
@@ -30,6 +32,7 @@ CREATE TABLE IF NOT EXISTS budget_categories (
 -- 3. Transactions (daily spends)
 CREATE TABLE IF NOT EXISTS transactions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL DEFAULT auth.uid(),
   title text NOT NULL,
   amount numeric NOT NULL,
   type text NOT NULL CHECK (type IN ('income', 'expense')),
@@ -42,6 +45,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 -- 4. Subscriptions (Netflix, Spotify, etc.)
 CREATE TABLE IF NOT EXISTS subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL DEFAULT auth.uid(),
   name text NOT NULL,
   amount numeric NOT NULL,
   billing_cycle text DEFAULT 'monthly',
@@ -55,6 +59,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 -- 5. EMIs
 CREATE TABLE IF NOT EXISTS emis (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL DEFAULT auth.uid(),
   name text NOT NULL,
   principal numeric NOT NULL,
   emi_amount numeric NOT NULL,
@@ -70,6 +75,7 @@ CREATE TABLE IF NOT EXISTS emis (
 -- 6. Credit cards
 CREATE TABLE IF NOT EXISTS credit_cards (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL DEFAULT auth.uid(),
   name text NOT NULL,
   bank text,
   credit_limit numeric NOT NULL,
@@ -83,6 +89,7 @@ CREATE TABLE IF NOT EXISTS credit_cards (
 -- 7. Loans
 CREATE TABLE IF NOT EXISTS loans (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL DEFAULT auth.uid(),
   name text NOT NULL,
   type text NOT NULL,
   principal numeric NOT NULL,
@@ -99,6 +106,7 @@ CREATE TABLE IF NOT EXISTS loans (
 -- 8. Investments & Savings (SIP, FD, PPF, etc.)
 CREATE TABLE IF NOT EXISTS investments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL DEFAULT auth.uid(),
   name text NOT NULL,
   type text NOT NULL,
   invested_amount numeric NOT NULL,
@@ -114,6 +122,7 @@ CREATE TABLE IF NOT EXISTS investments (
 -- 9. AI Chat History
 CREATE TABLE IF NOT EXISTS ai_chats (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL DEFAULT auth.uid(),
   role text NOT NULL CHECK (role IN ('user', 'ai')),
   content text NOT NULL,
   created_at timestamptz DEFAULT now()
@@ -122,12 +131,13 @@ CREATE TABLE IF NOT EXISTS ai_chats (
 -- 10. AI Advice / Insights
 CREATE TABLE IF NOT EXISTS ai_insights (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL DEFAULT auth.uid(),
   content text NOT NULL,
   created_at timestamptz DEFAULT now()
 );
 
 -- ============================================
--- Enable Row Level Security (recommended)
+-- Enable Row Level Security (MANDATORY FOR MULTI-USER)
 -- ============================================
 ALTER TABLE income ENABLE ROW LEVEL SECURITY;
 ALTER TABLE budget_categories ENABLE ROW LEVEL SECURITY;
@@ -140,14 +150,14 @@ ALTER TABLE investments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_chats ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_insights ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations for anon key (single-user app)
-CREATE POLICY "Allow all for anon" ON income FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for anon" ON budget_categories FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for anon" ON transactions FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for anon" ON subscriptions FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for anon" ON emis FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for anon" ON credit_cards FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for anon" ON loans FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for anon" ON investments FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for anon" ON ai_chats FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for anon" ON ai_insights FOR ALL USING (true) WITH CHECK (true);
+-- Allow individual user access (Multi-Tenant Rules)
+CREATE POLICY "Allow individual user access" ON income FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Allow individual user access" ON budget_categories FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Allow individual user access" ON transactions FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Allow individual user access" ON subscriptions FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Allow individual user access" ON emis FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Allow individual user access" ON credit_cards FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Allow individual user access" ON loans FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Allow individual user access" ON investments FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Allow individual user access" ON ai_chats FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Allow individual user access" ON ai_insights FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
