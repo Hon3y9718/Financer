@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://rhrcxtsfltmtvtaiwbmg.supabase.co";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJocmN4dHNmbHRtdHZ0YWl3Ym1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NTgxMjYsImV4cCI6MjA5MDQzNDEyNn0.YpuUerWEmcn9xT_sx8yhHgCjd39WElAGwMwdvR6XV_4";
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
 const fmt = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n || 0);
 const now = new Date();
@@ -27,11 +29,12 @@ async function sb(table, method = "GET", body = null, query = "") {
 const TABS = [
   { id: "dashboard", label: "Home", icon: "◈" },
   { id: "budget", label: "Budget", icon: "◉" },
+  { id: "income", label: "Income", icon: "↑" },
   { id: "transactions", label: "Spends", icon: "⟳" },
   { id: "subscriptions", label: "EMIs", icon: "↻" },
   { id: "loans", label: "Loans", icon: "▣" },
   { id: "investments", label: "Invest", icon: "△" },
-  { id: "income", label: "Income", icon: "↑" },
+  { id: "analytics", label: "Analytics", icon: "◱" },
   { id: "ai", label: "AI", icon: "✦" },
 ];
 
@@ -105,7 +108,7 @@ const CSS = `
   .btn:active{transform:scale(0.97)}
   .btn:hover{background:var(--bg)}
   .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
-  .btn-primary:hover{opacity:0.9}
+  .btn-primary:hover{background:var(--accent);opacity:0.9}
   .btn-sm{padding:0.3rem 0.65rem;font-size:0.75rem}
   .tag{display:inline-block;padding:2px 7px;border-radius:20px;font-size:0.68rem;font-weight:500;white-space:nowrap}
   .tag-green{background:#d8f3dc;color:#1b4332}
@@ -149,10 +152,52 @@ const CSS = `
   .empty{text-align:center;padding:2rem 1rem;color:var(--muted);font-size:0.875rem;line-height:1.6}
   .due-soon{color:var(--danger);font-size:0.7rem;font-weight:500}
   select.form-input option{background:var(--surface);color:var(--text)}
+  .hide-desktop{display:none!important}
+  @media(max-width:767px){
+    .hide-desktop{display:inline-flex!important}
+    .hide-mobile{display:none!important}
+    
+    .bottom-nav {
+      overflow: visible !important;
+      justify-content: space-around !important;
+    }
+    .bn-item { min-width: 0 !important; padding: 0.25rem !important; }
+    .bn-icon { font-size: 1.25rem !important; }
+    .bn-label { font-size: 0.65rem !important; }
+    
+    .bn-item.fab-button {
+      flex: 0 0 56px !important;
+      height: 56px;
+      border-radius: 16px !important;
+      background: var(--accent) !important;
+      color: #fff !important;
+      transform: translateY(-24px) !important;
+      box-shadow: 0 6px 16px rgba(45, 106, 79, 0.4) !important;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      margin: 0 0.2rem;
+      border: 4px solid var(--surface);
+    }
+    .bn-item.fab-button .bn-icon {
+      font-size: 1.8rem !important;
+      margin-bottom: 0 !important;
+    }
+    .bn-item.fab-button .bn-label { display: none !important; }
+    .bn-item.fab-button.active {
+      transform: translateY(-24px) scale(1.05) !important;
+      box-shadow: 0 8px 20px rgba(45, 106, 79, 0.6) !important;
+      background: var(--accent) !important;
+      color: #fff !important;
+    }
+  }
 `;
 
 export default function App() {
   const [tab, setTab] = useState("dashboard");
+  const [filterMonth, setFilterMonth] = useState(CUR_MONTH);
+  const [filterYear, setFilterYear] = useState(CUR_YEAR);
   const [data, setData] = useState({ income: [], budgets: [], transactions: [], subscriptions: [], emis: [], loans: [], credit_cards: [], investments: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -161,10 +206,13 @@ export default function App() {
   const loadAll = useCallback(async () => {
     try {
       setLoading(true);
+      const maxDays = new Date(filterYear, filterMonth, 0).getDate();
+      const startDate = `${filterYear}-${String(filterMonth).padStart(2, '0')}-01`;
+      const endDate = `${filterYear}-${String(filterMonth).padStart(2, '0')}-${maxDays}`;
       const [income, budgets, transactions, subscriptions, emis, loans, credit_cards, investments] = await Promise.all([
-        sb("income", "GET", null, `?month=eq.${CUR_MONTH}&year=eq.${CUR_YEAR}&order=created_at.desc`),
-        sb("budget_categories", "GET", null, `?month=eq.${CUR_MONTH}&year=eq.${CUR_YEAR}&order=created_at.desc`),
-        sb("transactions", "GET", null, `?order=date.desc&limit=100`),
+        sb("income", "GET", null, `?month=eq.${filterMonth}&year=eq.${filterYear}&order=created_at.desc`),
+        sb("budget_categories", "GET", null, `?month=eq.${filterMonth}&year=eq.${filterYear}&order=created_at.desc`),
+        sb("transactions", "GET", null, `?date=gte.${startDate}&date=lte.${endDate}&order=date.desc&limit=100`),
         sb("subscriptions", "GET", null, `?status=eq.active&order=created_at.desc`),
         sb("emis", "GET", null, `?status=eq.active&order=created_at.desc`),
         sb("loans", "GET", null, `?status=eq.active&order=created_at.desc`),
@@ -178,7 +226,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterMonth, filterYear]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -190,11 +238,11 @@ export default function App() {
   const totalInvestments = data.investments.reduce((s, i) => s + Number(i.monthly_contribution || 0), 0);
   const monthExpenses = data.transactions.filter(t => {
     const d = new Date(t.date);
-    return t.type === "expense" && d.getMonth() + 1 === CUR_MONTH && d.getFullYear() === CUR_YEAR;
+    return t.type === "expense" && d.getMonth() + 1 === filterMonth && d.getFullYear() === filterYear;
   }).reduce((s, t) => s + Number(t.amount), 0);
   const committed = totalSubscriptions + totalEMIs + totalLoanEMIs + totalCCMin + totalInvestments;
   const spendable = totalIncome - committed - monthExpenses;
-  const sharedProps = { data, reload: loadAll, modal, setModal };
+  const sharedProps = { data, reload: loadAll, modal, setModal, filterMonth, filterYear };
 
   if (loading) return (
     <>
@@ -211,7 +259,7 @@ export default function App() {
       <style>{CSS}</style>
       <div className="app">
         <aside className="sidebar">
-          <div className="logo"><span className="logo-dot" />Brim India</div>
+          <div className="logo" style={{ cursor: "pointer" }} onClick={() => setTab("dashboard")}><span className="logo-dot" />Brim India</div>
           {TABS.map(t => (
             <div key={t.id} className={`nav-item${tab === t.id ? " active" : ""}`} onClick={() => setTab(t.id)}>
               <span className="nav-icon">{t.icon}</span>{t.label}
@@ -231,7 +279,34 @@ export default function App() {
               {error}
             </div>
           )}
-          {tab === "dashboard" && <Dashboard data={data} totalIncome={totalIncome} committed={committed} spendable={spendable} monthExpenses={monthExpenses} totalInvestments={totalInvestments} />}
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem", alignItems: "center" }}>
+            <div className="hide-desktop" style={{ fontWeight: 600, fontSize: "1.1rem", alignItems: "center", cursor: "pointer" }} onClick={() => setTab("dashboard")}>
+               <span className="logo-dot" style={{ display: "inline-block", marginRight: 6 }}/>Brim
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", flex: 1, gap: "0.6rem", alignItems: "center" }}>
+              {tab !== "analytics" && (
+                <>
+                  <span className="hide-mobile" style={{ fontSize: "0.8rem", color: "var(--muted)", fontWeight: 500 }}>Month:</span>
+                  <input 
+                    type="month" 
+                    className="form-input" 
+                    style={{ width: "auto", padding: "0.3rem 0.6rem", fontSize: "0.85rem", height: "32px", borderRadius: "6px" }}
+                    value={`${filterYear}-${String(filterMonth).padStart(2, '0')}`}
+                    onChange={(e) => {
+                      if(e.target.value) {
+                        const [y, m] = e.target.value.split('-');
+                        setFilterYear(Number(y));
+                        setFilterMonth(Number(m));
+                      }
+                    }}
+                  />
+                </>
+              )}
+              <button className="btn btn-primary hide-desktop" style={{ height: "32px", padding: "0 0.75rem", fontSize: "0.8rem" }} onClick={() => setTab("ai")}>✦ AI</button>
+            </div>
+          </div>
+          {tab === "dashboard" && <Dashboard data={data} setTab={setTab} totalIncome={totalIncome} committed={committed} spendable={spendable} monthExpenses={monthExpenses} totalInvestments={totalInvestments} />}
+          {tab === "analytics" && <Analytics data={data} />}
           {tab === "budget" && <Budget {...sharedProps} />}
           {tab === "transactions" && <Transactions {...sharedProps} />}
           {tab === "subscriptions" && <Subscriptions {...sharedProps} />}
@@ -242,8 +317,8 @@ export default function App() {
         </main>
 
         <nav className="bottom-nav">
-          {TABS.map(t => (
-            <button key={t.id} className={`bn-item${tab === t.id ? " active" : ""}`} onClick={() => setTab(t.id)}>
+          {TABS.filter(t => t.id !== "ai" && t.id !== "analytics").map(t => (
+            <button key={t.id} className={`bn-item ${t.id === "transactions" ? "fab-button" : ""} ${tab === t.id ? " active" : ""}`} onClick={() => setTab(t.id)}>
               <span className="bn-icon">{t.icon}</span>
               <span className="bn-label">{t.label}</span>
             </button>
@@ -267,7 +342,7 @@ function Modal({ onClose, title, children }) {
   );
 }
 
-function Dashboard({ data, totalIncome, committed, spendable, monthExpenses, totalInvestments }) {
+function Dashboard({ data, totalIncome, committed, spendable, monthExpenses, totalInvestments, setTab }) {
   const pct = totalIncome > 0 ? Math.min(100, Math.round((monthExpenses / totalIncome) * 100)) : 0;
   const savingsPct = totalIncome > 0 ? Math.round((totalInvestments / totalIncome) * 100) : 0;
   const today = new Date().getDate();
@@ -301,6 +376,16 @@ function Dashboard({ data, totalIncome, committed, spendable, monthExpenses, tot
         <div className="card card-sm">
           <div className="metric-label">Savings Rate</div>
           <div className={`metric-val ${savingsPct >= 20 ? "green" : savingsPct >= 10 ? "amber" : "red"}`}>{savingsPct}%</div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: "0.75rem", borderColor: "var(--accent)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem" }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: "0.95rem", color: "var(--accent)", marginBottom: "4px" }}>◱ Deep Analytics</div>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", lineHeight: 1.4 }}>Open your advanced reports to filter spends and income.</div>
+          </div>
+          <button className="btn btn-primary btn-sm" style={{ flexShrink: 0 }} onClick={() => setTab("analytics")}>View</button>
         </div>
       </div>
 
@@ -342,11 +427,11 @@ function Dashboard({ data, totalIncome, committed, spendable, monthExpenses, tot
   );
 }
 
-function Budget({ data, reload, modal, setModal }) {
+function Budget({ data, reload, modal, setModal, filterMonth, filterYear }) {
   const [form, setForm] = useState({ name: "Food", limit_amount: "" });
   const categories = ["Food", "Transport", "Shopping", "Entertainment", "Health", "Utilities", "Other"];
   const save = async () => {
-    await sb("budget_categories", "POST", { ...form, icon: BUDGET_ICONS[form.name] || "📦", month: CUR_MONTH, year: CUR_YEAR, limit_amount: Number(form.limit_amount) });
+    await sb("budget_categories", "POST", { ...form, icon: BUDGET_ICONS[form.name] || "📦", month: filterMonth, year: filterYear, limit_amount: Number(form.limit_amount) });
     setModal(null); reload();
   };
   const del = async (id) => { await sb(`budget_categories?id=eq.${id}`, "DELETE"); reload(); };
@@ -739,11 +824,11 @@ function Investments({ data, reload, modal, setModal }) {
   );
 }
 
-function Income({ data, reload, modal, setModal }) {
+function Income({ data, reload, modal, setModal, filterMonth, filterYear }) {
   const [form, setForm] = useState({ name: "", amount: "", type: "salary" });
   const types = ["salary", "freelance", "business", "rental", "investment", "other"];
   const totalIncome = data.income.reduce((s, i) => s + Number(i.amount), 0);
-  const save = async () => { await sb("income", "POST", { ...form, amount: Number(form.amount), month: CUR_MONTH, year: CUR_YEAR }); setModal(null); reload(); };
+  const save = async () => { await sb("income", "POST", { ...form, amount: Number(form.amount), month: filterMonth, year: filterYear }); setModal(null); reload(); };
   const del = async (id) => { await sb(`income?id=eq.${id}`, "DELETE"); reload(); };
 
   return (
@@ -794,6 +879,26 @@ function AIAdvisor({ data, totalIncome, committed, spendable, monthExpenses }) {
   const [insight, setInsight] = useState(null);
   const bottomRef = useRef(null);
 
+  useEffect(() => {
+    async function loadChat() {
+      try {
+        const history = await sb("ai_chats", "GET", null, "?order=created_at.asc");
+        if (history && history.length > 0) {
+          setMessages(history.map(h => ({ role: h.role, content: h.content })));
+          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 300);
+        }
+        
+        const recentAdvice = await sb("ai_insights", "GET", null, "?order=created_at.desc&limit=1");
+        if (recentAdvice && recentAdvice.length > 0) {
+          setInsight(recentAdvice[0].content);
+        }
+      } catch (e) {
+        console.error("Failed to load AI chat history", e);
+      }
+    }
+    loadChat();
+  }, []);
+
   const buildContext = () => {
     const totalSubs = data.subscriptions.reduce((s, i) => s + Number(i.amount), 0);
     const totalEMIs = data.emis.reduce((s, i) => s + Number(i.emi_amount), 0);
@@ -812,46 +917,75 @@ Budget: ${data.budgets.map(b => `${b.name} ₹${b.spent_amount || 0}/₹${b.limi
   };
 
   const getInsights = async () => {
+    if (!GEMINI_API_KEY) {
+      setInsight("⚠️ Missing Gemini API Key. Please add VITE_GEMINI_API_KEY to your .env.local file.");
+      return;
+    }
     setInsightLoading(true);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: "You are a sharp, empathetic Indian personal finance advisor. Give 3-4 specific, actionable bullet insights starting with an emoji. Focus on what's wrong, what's at risk, and the single most impactful change. 2-3 sentences each. Use ₹.",
-          messages: [{ role: "user", content: `Analyse my finances:\n${buildContext()}` }]
+          systemInstruction: {
+            parts: [{ text: "You are a sharp, empathetic Indian personal finance advisor. Give 3-4 specific, actionable bullet insights starting with an emoji. Focus on what's wrong, what's at risk, and the single most impactful change. 2-3 sentences each. Use ₹." }]
+          },
+          contents: [{ role: "user", parts: [{ text: `Analyse my finances:\n${buildContext()}` }] }]
         })
       });
       const d = await res.json();
-      setInsight(d.content?.[0]?.text || "Could not generate insights.");
-    } catch { setInsight("Failed to load insights. Check API connection."); }
+      if (d.error) throw new Error(d.error.message);
+      
+      const adviceText = d.candidates?.[0]?.content?.parts?.[0]?.text || "Could not generate insights.";
+      setInsight(adviceText);
+      
+      // Save advice to DB
+      sb("ai_insights", "POST", { content: adviceText }).catch(console.error);
+    } catch (err) { setInsight(`Failed to load insights: ${err.message}`); }
     setInsightLoading(false);
   };
 
   const sendMsg = async () => {
     if (!input.trim()) return;
+    if (!GEMINI_API_KEY) {
+      setMessages(m => [...m, { role: "user", content: input }, { role: "ai", content: "⚠️ Missing Gemini API Key. Please add VITE_GEMINI_API_KEY to your .env.local file to use the advisor." }]);
+      setInput("");
+      return;
+    }
     const userMsg = input.trim();
     setInput("");
     const newMessages = [...messages, { role: "user", content: userMsg }];
     setMessages(newMessages);
     setLoading(true);
+
+    // Save user interaction to Supabase asynchronously
+    sb("ai_chats", "POST", { role: "user", content: userMsg }).catch(e => console.error(e));
+
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const pastLogs = messages.slice(-12).map(m => `${m.role === 'ai' ? 'Advisor' : 'User'}: ${m.content}`).join("\n");
+      const summaryContext = pastLogs ? `\n\n--- RECENT CHAT HISTORY SUMMARY ---\n${pastLogs}\n\n(The user's latest query is below)` : "";
+
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: `You are a friendly Indian personal finance advisor. Use ₹. Be specific and concise.\n\n${buildContext()}`,
-          messages: newMessages.map(m => ({ role: m.role, content: m.content }))
+          systemInstruction: {
+            parts: [{ text: `You are a friendly Indian personal finance advisor. Use ₹. Be specific and concise.\n\nContext:\n${buildContext()}${summaryContext}` }]
+          },
+          contents: [{ role: "user", parts: [{ text: userMsg }]} ]
         })
       });
       const d = await res.json();
-      setMessages(m => [...m, { role: "assistant", content: d.content?.[0]?.text || "Sorry, couldn't respond." }]);
-    } catch {
-      setMessages(m => [...m, { role: "assistant", content: "Error reaching AI. Please try again." }]);
+      if (d.error) throw new Error(d.error.message);
+      
+      const aiText = d.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, couldn't respond.";
+      setMessages(m => [...m, { role: "ai", content: aiText }]);
+      
+      // Save AI system response to Supabase
+      sb("ai_chats", "POST", { role: "ai", content: aiText }).catch(e => console.error(e));
+
+    } catch (err) {
+      setMessages(m => [...m, { role: "ai", content: `Error reaching AI: ${err.message}` }]);
     }
     setLoading(false);
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
@@ -898,6 +1032,227 @@ Budget: ${data.budgets.map(b => `${b.name} ₹${b.spent_amount || 0}/₹${b.limi
           <button className="btn btn-primary" onClick={sendMsg} disabled={loading || !input.trim()}>Send</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Analytics() {
+  const [dateRange, setDateRange] = useState({ 
+    start: new Date(new Date().setMonth(new Date().getMonth() - 2)).toISOString().slice(0, 10),
+    end: new Date().toISOString().slice(0, 10) 
+  });
+  const [viewMode, setViewMode] = useState("expenses");
+  const [expenseSource, setExpenseSource] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+
+  const [loading, setLoading] = useState(false);
+  const [chartData, setChartData] = useState([]);
+  const [pieData, setPieData] = useState([]);
+  const [availableCategories, setAvailableCategories] = useState([]);
+
+  useEffect(() => {
+    async function fetchAnalytics() {
+      setLoading(true);
+      try {
+        let monthly = {};
+        let cats = {};
+        let availableCatsSet = new Set();
+        
+        if (viewMode === "expenses") {
+          const tx = await sb("transactions", "GET", null, `?date=gte.${dateRange.start}&date=lte.${dateRange.end}&order=date.asc`);
+          const emis = await sb("emis", "GET", null, `?status=eq.active`);
+
+          if (expenseSource === "all" || expenseSource === "transactions") {
+            tx.filter(t => t.type === "expense").forEach(t => {
+              const cat = t.category || "Other";
+              availableCatsSet.add(cat);
+              if (categoryFilter === "All" || categoryFilter === cat) {
+                const m = t.date.slice(0, 7);
+                if (!monthly[m]) monthly[m] = { name: m, amount: 0 };
+                monthly[m].amount += Number(t.amount);
+                cats[cat] = (cats[cat] || 0) + Number(t.amount);
+              }
+            });
+          }
+          
+          if (expenseSource === "all" || expenseSource === "emis") {
+            availableCatsSet.add("EMIs");
+            if (categoryFilter === "All" || categoryFilter === "EMIs") {
+              emis.forEach(e => {
+                let count = 0;
+                let curr = new Date(dateRange.start);
+                curr.setDate(1);
+                const endD = new Date(dateRange.end);
+                
+                while(curr <= endD) {
+                  const m = curr.toISOString().slice(0, 7);
+                  if (e.start_date.slice(0, 7) <= m) {
+                    if (!monthly[m]) monthly[m] = { name: m, amount: 0 };
+                    monthly[m].amount += Number(e.emi_amount);
+                    count++;
+                  }
+                  curr.setMonth(curr.getMonth() + 1);
+                }
+                if (count > 0) cats["EMIs"] = (cats["EMIs"] || 0) + (Number(e.emi_amount) * count);
+              });
+            }
+          }
+        } else {
+          // Income View
+          const startM = Number(dateRange.start.slice(5,7));
+          const startY = Number(dateRange.start.slice(0,4));
+          const endM = Number(dateRange.end.slice(5,7));
+          const endY = Number(dateRange.end.slice(0,4));
+          
+          const incomes = await sb("income", "GET", null, `?year=gte.${startY}&year=lte.${endY}`);
+          
+          incomes.forEach(i => {
+            const isAfterStart = i.year > startY || (i.year === startY && i.month >= startM);
+            const isBeforeEnd = i.year < endY || (i.year === endY && i.month <= endM);
+            
+            if (isAfterStart && isBeforeEnd) {
+              const type = i.type || "Other";
+              availableCatsSet.add(type);
+              
+              if (categoryFilter === "All" || categoryFilter === type) {
+                const m = `${i.year}-${String(i.month).padStart(2, '0')}`;
+                if (!monthly[m]) monthly[m] = { name: m, amount: 0 };
+                monthly[m].amount += Number(i.amount);
+                cats[type] = (cats[type] || 0) + Number(i.amount);
+              }
+            }
+          });
+        }
+
+        const sortedChart = Object.values(monthly).sort((a,b) => a.name.localeCompare(b.name));
+        const pieArr = Object.keys(cats).map(k => ({ name: k, value: cats[k] })).sort((a,b) => b.value - a.value);
+        
+        setAvailableCategories(Array.from(availableCatsSet).sort());
+        setChartData(sortedChart);
+        setPieData(pieArr);
+      } catch (e) {
+        console.error(e);
+      }
+      setLoading(false);
+    }
+    fetchAnalytics();
+  }, [dateRange, viewMode, expenseSource, categoryFilter]);
+
+  const COLORS = ['#2d6a4f', '#e9c46a', '#e76f51', '#2a9d8f', '#264653', '#e4a558', '#9c6644'];
+
+  const handleModeChange = (e) => {
+    setViewMode(e.target.value);
+    setCategoryFilter("All");
+  };
+
+  return (
+    <div>
+      <div className="section-header">
+        <div className="page-title" style={{ marginBottom: 0 }}>Analytics</div>
+      </div>
+      
+      <div className="card" style={{ marginBottom: "1rem" }}>
+        <div className="form-row" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
+          <div className="form-group">
+            <label className="form-label">Report View</label>
+            <select className="form-input" value={viewMode} onChange={handleModeChange}>
+               <option value="expenses">Expenses</option>
+               <option value="income">Income</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Category Filter</label>
+            <select className="form-input" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+               <option value="All">All Categories</option>
+               {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="form-row" style={{ marginTop: "0.5rem", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
+          <div className="form-group">
+            <label className="form-label">Start Date</label>
+            <input type="date" className="form-input" value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">End Date</label>
+            <input type="date" className="form-input" value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
+          </div>
+        </div>
+        {viewMode === "expenses" && categoryFilter === "All" && (
+          <div className="form-group" style={{ marginTop: "0.5rem" }}>
+              <label className="form-label">Filter Spends</label>
+              <select className="form-input" value={expenseSource} onChange={e => { setExpenseSource(e.target.value); setCategoryFilter("All"); }}>
+                 <option value="all">All (Tx + EMIs)</option>
+                 <option value="transactions">Transactions</option>
+                 <option value="emis">EMIs Only</option>
+              </select>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="empty" style={{ margin: "3rem 0" }}>
+           <span className="spinner" style={{ width: 20, height: 20 }}></span>
+           <div style={{ marginTop: 10 }}>Crunching data...</div>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
+             <div className="card">
+                <div className="metric-label" style={{ marginBottom: "1rem" }}>Monthly Trend</div>
+                <div style={{ height: 200, marginLeft: "-0.5rem" }}>
+                  {chartData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData} margin={{ top: 10, right: 10, left: 5, bottom: 0 }}>
+                        <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => {
+                          const parts = v.split('-');
+                          return parts.length === 2 ? `${parts[1]}/${parts[0].slice(2)}` : v;
+                        }} />
+                        <YAxis fontSize={11} tickLine={false} axisLine={false} width={40} tickFormatter={(v) => v >= 1000 ? `₹${(v/1000).toLocaleString("en-IN", {maximumFractionDigits: 1})}k` : `₹${v}`} />
+                        <Tooltip formatter={(v) => `₹${Number(v).toLocaleString("en-IN")}`} cursor={{fill: 'var(--bg)'}} contentStyle={{ borderRadius: 8, border: '1px solid var(--border)', fontSize: '0.85rem' }} />
+                        <Bar dataKey="amount" fill={viewMode === "income" ? "var(--success)" : "var(--danger)"} radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <div className="empty" style={{ marginTop: "4rem" }}>No data</div>}
+                </div>
+             </div>
+             
+             <div className="card">
+                <div className="metric-label" style={{ marginBottom: "1rem" }}>Breakdown</div>
+                <div style={{ height: 200 }}>
+                  {pieData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} paddingAngle={2}>
+                          {pieData.map((e, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(v) => `₹${v}`} contentStyle={{ borderRadius: 8, border: '1px solid var(--border)', fontSize: '0.85rem' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : <div className="empty" style={{ marginTop: "4rem" }}>No data</div>}
+                </div>
+             </div>
+          </div>
+          
+          <div className="card">
+             <div className="section-header"><div className="section-title">Summary ({chartData.reduce((s, c) => s + c.amount, 0).toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 })})</div></div>
+             {pieData.map((p, i) => (
+               <div key={i} className="list-item">
+                 <div style={{display: "flex", alignItems: "center", gap: 8}}>
+                    <div style={{width: 12, height: 12, borderRadius: 2, background: COLORS[i % COLORS.length]}}></div>
+                    <div className="item-name">{p.name}</div>
+                 </div>
+                 <div className="item-amount" style={{ fontFamily: "var(--mono)", color: viewMode === "income" ? "var(--success)" : "var(--text)" }}>
+                   {viewMode === "income" ? "+" : ""}₹{p.value.toLocaleString("en-IN")}
+                 </div>
+               </div>
+             ))}
+             {pieData.length === 0 && <div className="empty">No records found for this set.</div>}
+          </div>
+        </>
+      )}
     </div>
   );
 }

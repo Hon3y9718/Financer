@@ -111,6 +111,21 @@ CREATE TABLE IF NOT EXISTS investments (
   created_at timestamptz DEFAULT now()
 );
 
+-- 9. AI Chat History
+CREATE TABLE IF NOT EXISTS ai_chats (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  role text NOT NULL CHECK (role IN ('user', 'ai')),
+  content text NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+-- 10. AI Advice / Insights
+CREATE TABLE IF NOT EXISTS ai_insights (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  content text NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
 -- ============================================
 -- Enable Row Level Security (recommended)
 -- ============================================
@@ -122,6 +137,8 @@ ALTER TABLE emis ENABLE ROW LEVEL SECURITY;
 ALTER TABLE credit_cards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE loans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE investments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_chats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_insights ENABLE ROW LEVEL SECURITY;
 
 -- Allow all operations for anon key (single-user app)
 CREATE POLICY "Allow all for anon" ON income FOR ALL USING (true) WITH CHECK (true);
@@ -132,3 +149,5 @@ CREATE POLICY "Allow all for anon" ON emis FOR ALL USING (true) WITH CHECK (true
 CREATE POLICY "Allow all for anon" ON credit_cards FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for anon" ON loans FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for anon" ON investments FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for anon" ON ai_chats FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for anon" ON ai_insights FOR ALL USING (true) WITH CHECK (true);
