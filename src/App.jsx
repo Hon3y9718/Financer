@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { SpeedInsights } from "@vercel/speed-insights/next"
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://rhrcxtsfltmtvtaiwbmg.supabase.co";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJocmN4dHNmbHRtdHZ0YWl3Ym1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NTgxMjYsImV4cCI6MjA5MDQzNDEyNn0.YpuUerWEmcn9xT_sx8yhHgCjd39WElAGwMwdvR6XV_4";
@@ -250,6 +250,7 @@ export default function App() {
           ))}
         </nav>
       </div>
+      <SpeedInsights />
     </>
   );
 }
